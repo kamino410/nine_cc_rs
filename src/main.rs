@@ -21,6 +21,7 @@ impl<'a> Iterator for TokenIter<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
+        self.s = self.s.trim_start();
         if self.s.is_empty() {
             return None;
         }
