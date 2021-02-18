@@ -1,5 +1,5 @@
 [package]
-name = "simple_cc"
+name = "simple_cc_rs"
 version = "0.1.0"
 authors = ["kamino410 <kamino.dev@gmail.com>"]
 edition = "2018"
