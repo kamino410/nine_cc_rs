@@ -19,11 +19,18 @@ fn main() {
     let arg = std::env::args().nth(1).unwrap();
     let tokens = TokenIter::new(arg.as_str()).collect::<Vec<Token>>();
 
-    // println!(".intel_syntax noprefix");
-    // println!(".globl _main");
-    // println!("_main:");
+    println!(".intel_syntax noprefix");
+    println!(".globl _main");
+    println!("_main:");
 
-    println!("{:?}", Expr::gen(&tokens));
+    let mut assembly: Vec<String> = vec![];
+    let expr = Expr::gen(&tokens);
+    expr.ok().unwrap().gen_assembly(&mut assembly);
 
-    // println!("  ret");
+    for line in assembly {
+        println!("{}", line);
+    }
+
+    println!("  pop rax");
+    println!("  ret");
 }

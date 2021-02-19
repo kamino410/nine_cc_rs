@@ -6,8 +6,11 @@ impl ConstIntNode {
     pub fn new(val: i64) -> Self {
         ConstIntNode { val }
     }
-    pub fn eval(&self) -> i64 {
-        self.val
+    // pub fn eval(&self) -> i64 {
+    //     self.val
+    // }
+    pub fn gen_assembly(&self, assembly: &mut Vec<String>) {
+        assembly.push(String::from(format!("  push {}", self.val)));
     }
 }
 
@@ -32,6 +35,22 @@ impl BinaryOpNode {
             r_expr,
         }
     }
+    pub fn gen_assembly(&self, assembly: &mut Vec<String>) {
+        self.l_expr.gen_assembly(assembly);
+        self.r_expr.gen_assembly(assembly);
+        assembly.push(String::from("  pop rdi"));
+        assembly.push(String::from("  pop rax"));
+        match self.op_type {
+            BinaryOpType::Add => assembly.push(String::from("  add rax, rdi")),
+            BinaryOpType::Sub => assembly.push(String::from("  sub rax, rdi")),
+            BinaryOpType::Mul => assembly.push(String::from("  imul rax, rdi")),
+            BinaryOpType::Div => {
+                assembly.push(String::from("  cqo"));
+                assembly.push(String::from("  idiv rdi"));
+            }
+        }
+        assembly.push(String::from("  push rax"));
+    }
     // pub fn eval(&self) -> i64 {
     //     let l_val = self.l_expr.eval();
     //     let r_val = self.r_expr.eval();
@@ -49,6 +68,15 @@ pub enum Expr {
     ConstInt(ConstIntNode),
     BinaryOp(Box<BinaryOpNode>),
 }
+impl Expr {
+    pub fn gen_assembly(&self, assembly: &mut Vec<String>) {
+        match self {
+            Expr::ConstInt(node) => node.gen_assembly(assembly),
+            Expr::BinaryOp(node) => node.gen_assembly(assembly),
+        }
+    }
+}
+
 // impl Expr {
 //     pub fn eval(&self) -> i64 {
 //         match self {
