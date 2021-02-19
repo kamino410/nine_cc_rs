@@ -39,14 +39,14 @@ impl<'a> Iterator for TokenIter<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.s.is_empty() {
-            return None;
-        }
-
         // skip spaces
         let first_non_space_idx = self.s.find(|c| c != ' ').unwrap_or(self.s.len());
         self.s = self.s.trim_start();
         self.pos += first_non_space_idx;
+
+        if self.s.is_empty() {
+            return None;
+        }
 
         // integer
         let first_non_num_idx = self

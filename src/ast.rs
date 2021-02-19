@@ -6,9 +6,6 @@ impl ConstIntNode {
     pub fn new(val: i64) -> Self {
         ConstIntNode { val }
     }
-    // pub fn eval(&self) -> i64 {
-    //     self.val
-    // }
     pub fn gen_assembly(&self, assembly: &mut Vec<String>) {
         assembly.push(String::from(format!("  push {}", self.val)));
     }
@@ -51,16 +48,6 @@ impl BinaryOpNode {
         }
         assembly.push(String::from("  push rax"));
     }
-    // pub fn eval(&self) -> i64 {
-    //     let l_val = self.l_expr.eval();
-    //     let r_val = self.r_expr.eval();
-    //     match self.op_type {
-    //         BinaryOpType::Add => l_val + r_val,
-    //         BinaryOpType::Sub => l_val - r_val,
-    //         BinaryOpType::Mul => l_val * r_val,
-    //         BinaryOpType::Div => l_val / r_val,
-    //     }
-    // }
 }
 
 #[derive(Debug)]
@@ -114,12 +101,12 @@ impl Expr {
 //     assert_eq!(expr.eval(), (0i64 - (-6i64)) / -8i64);
 // }
 
-use crate::token::{Token, TokenIter, TokenType};
+use crate::token::{Token, TokenType};
 
 #[derive(Debug)]
 pub struct ExprError {
-    message: &'static str,
-    pos: usize,
+    pub message: &'static str,
+    pub pos: usize,
 }
 impl ExprError {
     pub fn new(message: &'static str, pos: usize) -> Self {
@@ -146,10 +133,15 @@ impl Expr {
                             Expr::BinaryOp(Box::new(BinaryOpNode::new(*op_type, node, num_expr)));
                         unused_tokens = tmp_unused_tokens;
                     }
-                    Err(e) => return Err(e),
+                    Err(_) => {
+                        return Err(ExprError::new(
+                            "A number was not found after the operator.",
+                            unused_tokens[0].pos + 1,
+                        ))
+                    }
                 }
             } else {
-                return Err(ExprError::new("", 0));
+                return Err(ExprError::new("Unknown Operator.", unused_tokens[0].pos));
             }
         }
         Ok((node, unused_tokens))
