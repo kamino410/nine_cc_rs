@@ -5,6 +5,10 @@ pub enum TokenType {
     Num(usize),
     Plus,
     Minus,
+    Asterisk,
+    Slash,
+    LBracket,
+    RBracket,
     Unknown,
 }
 
@@ -21,10 +25,17 @@ impl Token {
             _ => None,
         }
     }
-    pub fn as_op(&self) -> Option<BinaryOpType> {
+    pub fn as_addsub_op(&self) -> Option<BinaryOpType> {
         match self.token_type {
             TokenType::Plus => Some(BinaryOpType::Add),
             TokenType::Minus => Some(BinaryOpType::Sub),
+            _ => None,
+        }
+    }
+    pub fn as_muldiv_op(&self) -> Option<BinaryOpType> {
+        match self.token_type {
+            TokenType::Asterisk => Some(BinaryOpType::Mul),
+            TokenType::Slash => Some(BinaryOpType::Div),
             _ => None,
         }
     }
@@ -77,6 +88,22 @@ impl<'a> Iterator for TokenIter<'a> {
                 token_type: TokenType::Minus,
                 pos: self.pos - 1,
             }),
+            "*" => Some(Token {
+                token_type: TokenType::Asterisk,
+                pos: self.pos - 1,
+            }),
+            "/" => Some(Token {
+                token_type: TokenType::Slash,
+                pos: self.pos - 1,
+            }),
+            "(" => Some(Token {
+                token_type: TokenType::LBracket,
+                pos: self.pos - 1,
+            }),
+            ")" => Some(Token {
+                token_type: TokenType::RBracket,
+                pos: self.pos - 1,
+            }),
             _ => Some(Token {
                 token_type: TokenType::Unknown,
                 pos: self.pos - 1,
@@ -93,7 +120,7 @@ impl<'a> TokenIter<'a> {
 
 #[test]
 fn tokenize_test() {
-    let raw_code = String::from("1 + 4-31  +1");
+    let raw_code = String::from("1 * 4-31  /2");
     let res = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
     let expected = vec![
         Token {
@@ -101,7 +128,7 @@ fn tokenize_test() {
             pos: 0,
         },
         Token {
-            token_type: TokenType::Plus,
+            token_type: TokenType::Asterisk,
             pos: 2,
         },
         Token {
@@ -117,11 +144,11 @@ fn tokenize_test() {
             pos: 6,
         },
         Token {
-            token_type: TokenType::Plus,
+            token_type: TokenType::Slash,
             pos: 10,
         },
         Token {
-            token_type: TokenType::Num(1),
+            token_type: TokenType::Num(2),
             pos: 11,
         },
     ];

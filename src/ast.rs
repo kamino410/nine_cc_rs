@@ -64,43 +64,6 @@ impl Expr {
     }
 }
 
-// impl Expr {
-//     pub fn eval(&self) -> i64 {
-//         match self {
-//             Expr::ConstInt(node) => node.eval(),
-//             Expr::BinaryOp(node) => node.eval(),
-//         }
-//     }
-// }
-
-// #[test]
-// fn binary_op_test1() {
-//     let expr = BinaryOpNode::new(
-//         BinaryOpType::Mul,
-//         Expr::ConstInt(ConstIntNode::new(8)),
-//         Expr::BinaryOp(Box::new(BinaryOpNode::new(
-//             BinaryOpType::Add,
-//             Expr::ConstInt(ConstIntNode::new(10)),
-//             Expr::ConstInt(ConstIntNode::new(3)),
-//         ))),
-//     );
-//     assert_eq!(expr.eval(), 8i64 * (10i64 + 3i64));
-// }
-//
-// #[test]
-// fn binary_op_test2() {
-//     let expr = BinaryOpNode::new(
-//         BinaryOpType::Div,
-//         Expr::BinaryOp(Box::new(BinaryOpNode::new(
-//             BinaryOpType::Sub,
-//             Expr::ConstInt(ConstIntNode::new(0)),
-//             Expr::ConstInt(ConstIntNode::new(-6)),
-//         ))),
-//         Expr::ConstInt(ConstIntNode::new(-8)),
-//     );
-//     assert_eq!(expr.eval(), (0i64 - (-6i64)) / -8i64);
-// }
-
 use crate::token::{Token, TokenType};
 
 #[derive(Debug)]
@@ -116,62 +79,103 @@ impl ExprError {
 
 impl Expr {
     pub fn gen(tokens: &[Token]) -> Result<Self, ExprError> {
-        let (node, _unused_tokens) = Self::parse_as_expr(tokens)?;
-        Ok(node)
+        let (node, unused_tokens) = Self::parse_as_expr(tokens)?;
+        if unused_tokens.is_empty() {
+            Ok(node)
+        } else {
+            match unused_tokens[0].token_type {
+                TokenType::Unknown => {
+                    Err(ExprError::new("Unknown Operator.", unused_tokens[0].pos))
+                }
+                _ => Err(ExprError::new("Operator is missing.", unused_tokens[0].pos)),
+            }
+        }
     }
+
     fn parse_as_expr(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
-        let (mut node, mut unused_tokens) = Self::parse_as_num(tokens)?;
+        let (mut node, mut unused_tokens) = Self::parse_as_term(tokens)?;
 
         loop {
             if unused_tokens.len() == 0 {
                 break;
             }
-            if let Some(op_type) = &unused_tokens[0].as_op() {
-                match Self::parse_as_num(&unused_tokens[1..]) {
+            if let Some(op_type) = &unused_tokens[0].as_addsub_op() {
+                match Self::parse_as_term(&unused_tokens[1..]) {
                     Ok((num_expr, tmp_unused_tokens)) => {
                         node =
                             Expr::BinaryOp(Box::new(BinaryOpNode::new(*op_type, node, num_expr)));
                         unused_tokens = tmp_unused_tokens;
                     }
-                    Err(_) => {
-                        return Err(ExprError::new(
-                            "A number was not found after the operator.",
-                            unused_tokens[0].pos + 1,
-                        ))
+                    Err(e) => {
+                        // return Err(ExprError::new(
+                        //     "A number was not found after the operator.",
+                        //     unused_tokens[0].pos + 1,
+                        // ))
+                        return Err(e);
                     }
                 }
             } else {
-                return Err(ExprError::new("Unknown Operator.", unused_tokens[0].pos));
+                break; // return Err(ExprError::new("Unknown Operator.", unused_tokens[0].pos));
             }
         }
         Ok((node, unused_tokens))
     }
 
-    fn parse_as_num(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
-        let token = &tokens
-            .get(0)
-            .ok_or(ExprError::new("A number token was not found.", 0))?;
+    fn parse_as_term(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+        let (mut node, mut unused_tokens) = Self::parse_as_factor(tokens)?;
+
+        loop {
+            if unused_tokens.len() == 0 {
+                break;
+            }
+            if let Some(op_type) = &unused_tokens[0].as_muldiv_op() {
+                match Self::parse_as_factor(&unused_tokens[1..]) {
+                    Ok((num_expr, tmp_unused_tokens)) => {
+                        node =
+                            Expr::BinaryOp(Box::new(BinaryOpNode::new(*op_type, node, num_expr)));
+                        unused_tokens = tmp_unused_tokens;
+                    }
+                    Err(e) => {
+                        // return Err(ExprError::new(
+                        //     "A number was not found after the operator.",
+                        //     unused_tokens[0].pos + 1,
+                        // ))
+                        return Err(e);
+                    }
+                }
+            } else {
+                break;
+                // return Err(ExprError::new("Unknown Operator.", unused_tokens[0].pos));
+            }
+        }
+        Ok((node, unused_tokens))
+    }
+
+    fn parse_as_factor(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+        let token = &tokens.get(0).ok_or(ExprError::new("", 0))?;
         match token.token_type {
             TokenType::Num(n) => Ok((Expr::ConstInt(ConstIntNode::new(n as i64)), &tokens[1..])),
+            TokenType::LBracket => {
+                let (expr, unused_tokens) = Self::parse_as_expr(&tokens[1..])?;
+                let next_token = &unused_tokens
+                    .get(0)
+                    .ok_or(ExprError::new("Pair ) is missing.", token.pos))?;
+                match next_token.token_type {
+                    TokenType::RBracket => Ok((expr, &unused_tokens[1..])),
+                    _ => Err(ExprError::new("Invalid operator.", next_token.pos)),
+                }
+            }
             _ => Err(ExprError::new("The token is not a number.", token.pos)),
         }
     }
+
+    // fn parse_as_num(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+    //     let token = &tokens
+    //         .get(0)
+    //         .ok_or(ExprError::new("A number token was not found.", 0))?;
+    //     match token.token_type {
+    //         TokenType::Num(n) => Ok((Expr::ConstInt(ConstIntNode::new(n as i64)), &tokens[1..])),
+    //         _ => Err(ExprError::new("The token is not a number.", token.pos)),
+    //     }
+    // }
 }
-
-// #[test]
-// fn token2ast_test() {
-//     let tokens = vec![Token {
-//         token_type: TokenType::Num(5),
-//         pos: 0,
-//     }];
-//     let res = Expr::gen(&tokens).ok().unwrap();
-//     assert_eq!(res.eval(), 5i64);
-// }
-
-// #[test]
-// fn token_eval_test() {
-//     let raw_code = String::from("1 + 4-31  +1");
-//     let tokens = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
-//     let res = Expr::gen(&tokens).ok().unwrap().eval();
-//     assert_eq!(res, -25i64);
-// }
