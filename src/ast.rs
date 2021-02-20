@@ -1,3 +1,5 @@
+use crate::token::{Token, TokenType};
+
 #[derive(Debug)]
 pub struct ConstIntNode {
     val: i64,
@@ -51,22 +53,6 @@ impl BinaryOpNode {
 }
 
 #[derive(Debug)]
-pub enum Expr {
-    ConstInt(ConstIntNode),
-    BinaryOp(Box<BinaryOpNode>),
-}
-impl Expr {
-    pub fn gen_assembly(&self, assembly: &mut Vec<String>) {
-        match self {
-            Expr::ConstInt(node) => node.gen_assembly(assembly),
-            Expr::BinaryOp(node) => node.gen_assembly(assembly),
-        }
-    }
-}
-
-use crate::token::{Token, TokenType};
-
-#[derive(Debug)]
 pub struct ExprError {
     pub message: &'static str,
     pub pos: usize,
@@ -77,8 +63,13 @@ impl ExprError {
     }
 }
 
+#[derive(Debug)]
+pub enum Expr {
+    ConstInt(ConstIntNode),
+    BinaryOp(Box<BinaryOpNode>),
+}
 impl Expr {
-    pub fn gen(tokens: &[Token]) -> Result<Self, ExprError> {
+    pub fn from(tokens: &[Token]) -> Result<Self, ExprError> {
         let (node, unused_tokens) = Self::parse_as_expr(tokens)?;
         if unused_tokens.is_empty() {
             Ok(node)
@@ -89,6 +80,13 @@ impl Expr {
                 }
                 _ => Err(ExprError::new("Operator is missing.", unused_tokens[0].pos)),
             }
+        }
+    }
+
+    pub fn gen_assembly(&self, assembly: &mut Vec<String>) {
+        match self {
+            Expr::ConstInt(node) => node.gen_assembly(assembly),
+            Expr::BinaryOp(node) => node.gen_assembly(assembly),
         }
     }
 
@@ -107,15 +105,11 @@ impl Expr {
                         unused_tokens = tmp_unused_tokens;
                     }
                     Err(e) => {
-                        // return Err(ExprError::new(
-                        //     "A number was not found after the operator.",
-                        //     unused_tokens[0].pos + 1,
-                        // ))
                         return Err(e);
                     }
                 }
             } else {
-                break; // return Err(ExprError::new("Unknown Operator.", unused_tokens[0].pos));
+                break;
             }
         }
         Ok((node, unused_tokens))
@@ -136,16 +130,11 @@ impl Expr {
                         unused_tokens = tmp_unused_tokens;
                     }
                     Err(e) => {
-                        // return Err(ExprError::new(
-                        //     "A number was not found after the operator.",
-                        //     unused_tokens[0].pos + 1,
-                        // ))
                         return Err(e);
                     }
                 }
             } else {
                 break;
-                // return Err(ExprError::new("Unknown Operator.", unused_tokens[0].pos));
             }
         }
         Ok((node, unused_tokens))
@@ -168,14 +157,40 @@ impl Expr {
             _ => Err(ExprError::new("The token is not a number.", token.pos)),
         }
     }
+}
 
-    // fn parse_as_num(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
-    //     let token = &tokens
-    //         .get(0)
-    //         .ok_or(ExprError::new("A number token was not found.", 0))?;
-    //     match token.token_type {
-    //         TokenType::Num(n) => Ok((Expr::ConstInt(ConstIntNode::new(n as i64)), &tokens[1..])),
-    //         _ => Err(ExprError::new("The token is not a number.", token.pos)),
-    //     }
-    // }
+#[test]
+fn ast_parse_ok_test1() {
+    use crate::token::{Token, TokenIter};
+    let raw_code = String::from("1 *(4-31) /2 + 5");
+    let tokens = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
+    let _ = Expr::from(&tokens).ok().unwrap();
+}
+#[test]
+fn ast_parse_ok_test2() {
+    use crate::token::{Token, TokenIter};
+    let raw_code = String::from("124- 513+(334)*9/(3+3)  ");
+    let tokens = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
+    let _ = Expr::from(&tokens).ok().unwrap();
+}
+#[test]
+fn ast_parse_err_test1() {
+    use crate::token::{Token, TokenIter};
+    let raw_code = String::from("124- -42");
+    let tokens = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
+    let _ = Expr::from(&tokens).err().unwrap();
+}
+#[test]
+fn ast_parse_err_test2() {
+    use crate::token::{Token, TokenIter};
+    let raw_code = String::from("124* (3 + 2");
+    let tokens = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
+    let _ = Expr::from(&tokens).err().unwrap();
+}
+#[test]
+fn ast_parse_err_test3() {
+    use crate::token::{Token, TokenIter};
+    let raw_code = String::from("124* (3 + 2))");
+    let tokens = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
+    let _ = Expr::from(&tokens).err().unwrap();
 }

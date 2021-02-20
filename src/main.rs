@@ -12,26 +12,24 @@ fn main() {
     let arg = std::env::args().nth(1).unwrap();
     let tokens = TokenIter::new(arg.as_str()).collect::<Vec<Token>>();
 
-    match Expr::gen(&tokens) {
+    match Expr::from(&tokens) {
         Err(e) => {
             eprintln!("[Error]");
             eprintln!("    {}", arg);
             eprintln!("    {: <2$}^ {}", "", e.message, e.pos);
         }
         Ok(expr) => {
-            println!(".intel_syntax noprefix");
-            println!(".globl _main");
-            println!("_main:");
-
             let mut assembly: Vec<String> = vec![];
+            assembly.push(String::from(".intel_syntax noprefix"));
+            assembly.push(String::from(".globl _main"));
+            assembly.push(String::from("_main:"));
             expr.gen_assembly(&mut assembly);
+            assembly.push(String::from("  pop rax"));
+            assembly.push(String::from("  ret"));
 
             for line in assembly {
                 println!("{}", line);
             }
-
-            println!("  pop rax");
-            println!("  ret");
         }
     }
 }

@@ -120,7 +120,7 @@ impl<'a> TokenIter<'a> {
 
 #[test]
 fn tokenize_test() {
-    let raw_code = String::from("1 * 4-31  /2");
+    let raw_code = String::from("1 *(4-31) /2 + 5");
     let res = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
     let expected = vec![
         Token {
@@ -130,6 +130,10 @@ fn tokenize_test() {
         Token {
             token_type: TokenType::Asterisk,
             pos: 2,
+        },
+        Token {
+            token_type: TokenType::LBracket,
+            pos: 3,
         },
         Token {
             token_type: TokenType::Num(4),
@@ -144,12 +148,24 @@ fn tokenize_test() {
             pos: 6,
         },
         Token {
+            token_type: TokenType::RBracket,
+            pos: 8,
+        },
+        Token {
             token_type: TokenType::Slash,
             pos: 10,
         },
         Token {
             token_type: TokenType::Num(2),
             pos: 11,
+        },
+        Token {
+            token_type: TokenType::Plus,
+            pos: 13,
+        },
+        Token {
+            token_type: TokenType::Num(5),
+            pos: 15,
         },
     ];
     let matching = expected
