@@ -1,4 +1,4 @@
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum TokenType {
     Ident(String),
     Num(usize),
@@ -34,6 +34,18 @@ impl Token {
         match self.token_type {
             TokenType::Num(n) => Some(n),
             _ => None,
+        }
+    }
+    pub fn is_endofstmt(&self) -> bool {
+        match self.token_type {
+            TokenType::SemiColon => true,
+            _ => false,
+        }
+    }
+    pub fn is_assign_op(&self) -> bool {
+        match self.token_type {
+            TokenType::Equal => true,
+            _ => false,
         }
     }
     pub fn is_addsub_op(&self) -> bool {
@@ -149,6 +161,7 @@ impl<'a> Iterator for TokenIter<'a> {
             return Some(Token::new(TokenType::LineFeed, (self.pos.0, cur_offset)));
         }
 
+        // variable
         let first_non_alphabet_idx = self
             .s
             .find(|c| !char::is_alphabetic(c))

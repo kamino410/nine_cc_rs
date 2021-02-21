@@ -23,6 +23,8 @@ pub enum BinaryOpType {
     Neq,
     Lt,
     Leq,
+    Assign,
+    Statements,
 }
 #[derive(Debug)]
 pub struct BinaryOpNode {
@@ -71,8 +73,29 @@ impl BinaryOpNode {
                 assembly.push(String::from("  setle al"));
                 assembly.push(String::from("  movzx rax, al"));
             }
+            BinaryOpType::Assign => {
+                panic!("Unsupported yet.");
+            }
+            BinaryOpType::Statements => {
+                panic!("Unsupported yet.");
+            }
         }
         assembly.push(String::from("  push rax"));
+    }
+}
+
+#[derive(Debug)]
+pub struct VariableNode {
+    pub name: String,
+}
+impl VariableNode {
+    pub fn new(name: &str) -> Self {
+        VariableNode {
+            name: name.to_string(),
+        }
+    }
+    pub fn gen_assembly(&self, assembly: &mut Vec<String>) {
+        panic!("Not implemented yet.");
     }
 }
 
@@ -92,14 +115,47 @@ type InternalExprError = Option<ExprError>;
 #[derive(Debug)]
 pub enum Expr {
     ConstInt(ConstIntNode),
+    Variable(VariableNode),
     BinaryOp(Box<BinaryOpNode>),
 }
 impl Expr {
     pub fn from(tokens: &[Token]) -> Result<Self, ExprError> {
-        match Self::parse_as_eqnterm(tokens) {
+        let (node, _) = Self::parse_as_stmts(tokens)?;
+        Ok(node)
+    }
+
+    pub fn gen_assembly(&self, assembly: &mut Vec<String>) {
+        match self {
+            Expr::ConstInt(node) => node.gen_assembly(assembly),
+            Expr::Variable(node) => node.gen_assembly(assembly),
+            Expr::BinaryOp(node) => node.gen_assembly(assembly),
+        }
+    }
+
+    fn parse_as_stmts(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+        let (mut node, mut unused_tokens) = Self::parse_as_stmt(tokens)?;
+        loop {
+            if unused_tokens.is_empty() {
+                break;
+            }
+            let (stmt_node, tmp_unused_tokens) = Self::parse_as_stmt(unused_tokens)?;
+            node = Expr::BinaryOp(Box::new(BinaryOpNode::new(
+                BinaryOpType::Statements,
+                node,
+                stmt_node,
+            )));
+            unused_tokens = tmp_unused_tokens;
+        }
+        Ok((node, unused_tokens))
+    }
+
+    fn parse_as_stmt(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+        match Self::parse_as_expr(tokens) {
             Ok((node, unused_tokens)) => {
                 if unused_tokens.is_empty() {
-                    Ok(node)
+                    Err(ExprError::new("; is expected.", tokens.last().unwrap().pos))
+                } else if unused_tokens[0].is_endofstmt() {
+                    Ok((node, &unused_tokens[1..]))
                 } else {
                     Err(ExprError::new(
                         match unused_tokens[0].token_type {
@@ -116,12 +172,40 @@ impl Expr {
                 None => Err(ExprError::new("An expression is expected.", (0, 0))),
             },
         }
+        // let (node, unused_tokens) = Self::parse_as_expr(tokens)?;
+        // if !unused_tokens.is_empty() && !unused_tokens[0].is_endofstmt() {
+        //     Err(ExprError::new(
+        //         "; is expected.",
+        //         (unused_tokens[0].pos.0, unused_tokens[0].pos.1 + 1),
+        //     ))
+        // } else {
+        //     Ok((node, unused_tokens))
+        // }
     }
 
-    pub fn gen_assembly(&self, assembly: &mut Vec<String>) {
-        match self {
-            Expr::ConstInt(node) => node.gen_assembly(assembly),
-            Expr::BinaryOp(node) => node.gen_assembly(assembly),
+    fn parse_as_expr(tokens: &[Token]) -> Result<(Self, &[Token]), InternalExprError> {
+        Self::parse_as_assign(tokens)
+    }
+
+    fn parse_as_assign(tokens: &[Token]) -> Result<(Self, &[Token]), InternalExprError> {
+        let (mut node, unused_tokens) = Self::parse_as_eqnterm(tokens)?;
+        if unused_tokens.is_empty() || !unused_tokens[0].is_assign_op() {
+            Ok((node, unused_tokens))
+        } else {
+            let (expr_node, tmp_unused_tokens) =
+                Self::parse_as_expr(&unused_tokens[1..]).map_err(|e| match e {
+                    Some(e) => Some(e),
+                    None => Some(ExprError::new(
+                        "An expression is expected.",
+                        (unused_tokens[0].pos.0, unused_tokens[0].pos.1 + 1),
+                    )),
+                })?;
+            node = Expr::BinaryOp(Box::new(BinaryOpNode::new(
+                BinaryOpType::Assign,
+                node,
+                expr_node,
+            )));
+            Ok((node, tmp_unused_tokens))
         }
     }
 
@@ -247,8 +331,11 @@ impl Expr {
         let token = &tokens.get(0).ok_or(None)?;
         match token.token_type {
             TokenType::Num(n) => Ok((Expr::ConstInt(ConstIntNode::new(n as i64)), &tokens[1..])),
+            TokenType::Ident(ref idnt) => {
+                Ok((Expr::Variable(VariableNode::new(idnt)), &tokens[1..]))
+            }
             TokenType::LBrckt => {
-                let (expr, unused_tokens) = Self::parse_as_eqnterm(&tokens[1..])?;
+                let (expr, unused_tokens) = Self::parse_as_expr(&tokens[1..])?;
                 let next_token = &unused_tokens
                     .get(0)
                     .ok_or(ExprError::new("Corresponding ) is missing.", token.pos))?;
@@ -257,7 +344,10 @@ impl Expr {
                     _ => Err(Some(ExprError::new("Invalid operator.", next_token.pos))),
                 }
             }
-            _ => Err(Some(ExprError::new("A number is expected.", token.pos))),
+            _ => Err(Some(ExprError::new(
+                "An expression is expected.",
+                token.pos,
+            ))),
         }
     }
 }
