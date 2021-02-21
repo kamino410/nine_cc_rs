@@ -19,6 +19,10 @@ pub enum BinaryOpType {
     Sub,
     Mul,
     Div,
+    Eql,
+    Neq,
+    Lt,
+    Leq,
 }
 #[derive(Debug)]
 pub struct BinaryOpNode {
@@ -47,6 +51,26 @@ impl BinaryOpNode {
                 assembly.push(String::from("  cqo"));
                 assembly.push(String::from("  idiv rdi"));
             }
+            BinaryOpType::Eql => {
+                assembly.push(String::from("  cmp rax, rdi"));
+                assembly.push(String::from("  sete al"));
+                assembly.push(String::from("  movzx rax, al"));
+            }
+            BinaryOpType::Neq => {
+                assembly.push(String::from("  cmp rax, rdi"));
+                assembly.push(String::from("  setne al"));
+                assembly.push(String::from("  movzx rax, al"));
+            }
+            BinaryOpType::Lt => {
+                assembly.push(String::from("  cmp rax, rdi"));
+                assembly.push(String::from("  setl al"));
+                assembly.push(String::from("  movzx rax, al"));
+            }
+            BinaryOpType::Leq => {
+                assembly.push(String::from("  cmp rax, rdi"));
+                assembly.push(String::from("  setle al"));
+                assembly.push(String::from("  movzx rax, al"));
+            }
         }
         assembly.push(String::from("  push rax"));
     }
@@ -70,20 +94,18 @@ pub enum Expr {
 }
 impl Expr {
     pub fn from(tokens: &[Token]) -> Result<Self, ExprError> {
-        let (node, unused_tokens) = Self::parse_as_expr(tokens)?;
+        let (node, unused_tokens) = Self::parse_as_eqnterm(tokens)?;
         if unused_tokens.is_empty() {
             Ok(node)
         } else {
-            match unused_tokens[0].token_type {
-                TokenType::RBrckt => Err(ExprError::new(
-                    "Corresponding ( is missing.",
-                    unused_tokens[0].pos,
-                )),
-                TokenType::Unknown => {
-                    Err(ExprError::new("Unknown Operator.", unused_tokens[0].pos))
-                }
-                _ => Err(ExprError::new("Operator is missing.", unused_tokens[0].pos)),
-            }
+            Err(ExprError::new(
+                match unused_tokens[0].token_type {
+                    TokenType::RBrckt => "Corresponding ( is missing.",
+                    TokenType::Unknown => "Unknown Operator.",
+                    _ => "Operator is missing.",
+                },
+                unused_tokens[0].pos,
+            ))
         }
     }
 
@@ -94,24 +116,16 @@ impl Expr {
         }
     }
 
-    fn parse_as_expr(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
-        let (mut node, mut unused_tokens) = Self::parse_as_term(tokens)?;
-
+    fn parse_as_eqnterm(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+        let (mut node, mut unused_tokens) = Self::parse_as_relterm(tokens)?;
         loop {
             if unused_tokens.len() == 0 {
                 break;
             }
-            if let Some(op_type) = &unused_tokens[0].as_addsub_op() {
-                match Self::parse_as_term(&unused_tokens[1..]) {
-                    Ok((num_expr, tmp_unused_tokens)) => {
-                        node =
-                            Expr::BinaryOp(Box::new(BinaryOpNode::new(*op_type, node, num_expr)));
-                        unused_tokens = tmp_unused_tokens;
-                    }
-                    Err(e) => {
-                        return Err(e);
-                    }
-                }
+            if let Some(op_type) = &unused_tokens[0].as_eqn_op() {
+                let (num_expr, tmp_unused_tokens) = Self::parse_as_relterm(&unused_tokens[1..])?;
+                node = Expr::BinaryOp(Box::new(BinaryOpNode::new(*op_type, node, num_expr)));
+                unused_tokens = tmp_unused_tokens;
             } else {
                 break;
             }
@@ -119,24 +133,51 @@ impl Expr {
         Ok((node, unused_tokens))
     }
 
-    fn parse_as_term(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
-        let (mut node, mut unused_tokens) = Self::parse_as_unary(tokens)?;
+    fn parse_as_relterm(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+        let (mut node, mut unused_tokens) = Self::parse_as_addterm(tokens)?;
+        loop {
+            if unused_tokens.len() == 0 || !unused_tokens[0].is_rel_op() {
+                break;
+            }
+            let (add_term, tmp_unused_tokens) = Self::parse_as_addterm(&unused_tokens[1..])?;
+            node = Expr::BinaryOp(Box::new(match unused_tokens[0].token_type {
+                TokenType::LAnglBrckt => BinaryOpNode::new(BinaryOpType::Lt, node, add_term),
+                TokenType::RAnglBrckt => BinaryOpNode::new(BinaryOpType::Lt, add_term, node),
+                TokenType::LAnglBrcktEq => BinaryOpNode::new(BinaryOpType::Leq, node, add_term),
+                TokenType::RAnglBrcktEq | _ => BinaryOpNode::new(BinaryOpType::Leq, add_term, node),
+            }));
+            unused_tokens = tmp_unused_tokens;
+        }
+        Ok((node, unused_tokens))
+    }
 
+    fn parse_as_addterm(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+        let (mut node, mut unused_tokens) = Self::parse_as_multerm(tokens)?;
+        loop {
+            if unused_tokens.len() == 0 {
+                break;
+            }
+            if let Some(op_type) = &unused_tokens[0].as_addsub_op() {
+                let (num_expr, tmp_unused_tokens) = Self::parse_as_multerm(&unused_tokens[1..])?;
+                node = Expr::BinaryOp(Box::new(BinaryOpNode::new(*op_type, node, num_expr)));
+                unused_tokens = tmp_unused_tokens;
+            } else {
+                break;
+            }
+        }
+        Ok((node, unused_tokens))
+    }
+
+    fn parse_as_multerm(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+        let (mut node, mut unused_tokens) = Self::parse_as_unary(tokens)?;
         loop {
             if unused_tokens.len() == 0 {
                 break;
             }
             if let Some(op_type) = &unused_tokens[0].as_muldiv_op() {
-                match Self::parse_as_unary(&unused_tokens[1..]) {
-                    Ok((num_expr, tmp_unused_tokens)) => {
-                        node =
-                            Expr::BinaryOp(Box::new(BinaryOpNode::new(*op_type, node, num_expr)));
-                        unused_tokens = tmp_unused_tokens;
-                    }
-                    Err(e) => {
-                        return Err(e);
-                    }
-                }
+                let (num_expr, tmp_unused_tokens) = Self::parse_as_unary(&unused_tokens[1..])?;
+                node = Expr::BinaryOp(Box::new(BinaryOpNode::new(*op_type, node, num_expr)));
+                unused_tokens = tmp_unused_tokens;
             } else {
                 break;
             }
@@ -170,7 +211,7 @@ impl Expr {
         match token.token_type {
             TokenType::Num(n) => Ok((Expr::ConstInt(ConstIntNode::new(n as i64)), &tokens[1..])),
             TokenType::LBrckt => {
-                let (expr, unused_tokens) = Self::parse_as_expr(&tokens[1..])?;
+                let (expr, unused_tokens) = Self::parse_as_eqnterm(&tokens[1..])?;
                 let next_token = &unused_tokens
                     .get(0)
                     .ok_or(ExprError::new("Corresponding ) is missing.", token.pos))?;
@@ -187,7 +228,7 @@ impl Expr {
 #[test]
 fn ast_parse_ok_test1() {
     use crate::token::{Token, TokenIter};
-    let raw_code = String::from("1 *(4-31) /2 + 5");
+    let raw_code = String::from("1 *(4<31) /2 + 5");
     let tokens = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
     let _ = Expr::from(&tokens).ok().unwrap();
 }
@@ -206,6 +247,13 @@ fn ast_parse_ok_test3() {
     let _ = Expr::from(&tokens).ok().unwrap();
 }
 #[test]
+fn ast_parse_ok_test4() {
+    use crate::token::{Token, TokenIter};
+    let raw_code = String::from("(3<4<5 != 1)==(1 <= 2)");
+    let tokens = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
+    let _ = Expr::from(&tokens).ok().unwrap();
+}
+#[test]
 fn ast_parse_err_test1() {
     use crate::token::{Token, TokenIter};
     let raw_code = String::from("124* (3 + 2");
@@ -216,6 +264,13 @@ fn ast_parse_err_test1() {
 fn ast_parse_err_test2() {
     use crate::token::{Token, TokenIter};
     let raw_code = String::from("124* (3 + 2))");
+    let tokens = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
+    let _ = Expr::from(&tokens).err().unwrap();
+}
+#[test]
+fn ast_parse_err_test3() {
+    use crate::token::{Token, TokenIter};
+    let raw_code = String::from("124 <!= (3+5)");
     let tokens = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
     let _ = Expr::from(&tokens).err().unwrap();
 }

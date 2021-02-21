@@ -48,6 +48,22 @@ impl Token {
             _ => None,
         }
     }
+    pub fn as_eqn_op(&self) -> Option<BinaryOpType> {
+        match self.token_type {
+            TokenType::DoubleEq => Some(BinaryOpType::Eql),
+            TokenType::ExclamEq => Some(BinaryOpType::Neq),
+            _ => None,
+        }
+    }
+    pub fn is_rel_op(&self) -> bool {
+        match self.token_type {
+            TokenType::LAnglBrckt
+            | TokenType::RAnglBrckt
+            | TokenType::LAnglBrcktEq
+            | TokenType::RAnglBrcktEq => true,
+            _ => false,
+        }
+    }
 }
 
 pub struct TokenIter<'a> {
