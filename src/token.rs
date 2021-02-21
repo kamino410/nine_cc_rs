@@ -7,8 +7,14 @@ pub enum TokenType {
     Minus,
     Asterisk,
     Slash,
-    LBracket,
-    RBracket,
+    LBrckt,
+    RBrckt,
+    DoubleEq,
+    ExclamEq,
+    LAnglBrckt,
+    RAnglBrckt,
+    LAnglBrcktEq,
+    RAnglBrcktEq,
     Unknown,
 }
 
@@ -19,6 +25,9 @@ pub struct Token {
 }
 
 impl Token {
+    pub fn new(token_type: TokenType, pos: usize) -> Self {
+        Token { token_type, pos }
+    }
     pub fn as_num(&self) -> Option<usize> {
         match self.token_type {
             TokenType::Num(n) => Some(n),
@@ -69,46 +78,44 @@ impl<'a> Iterator for TokenIter<'a> {
             let front_pos = self.pos;
             self.s = s_remains;
             self.pos += first_non_num_idx;
-            return Some(Token {
-                token_type: TokenType::Num(s_num.parse::<usize>().unwrap()),
-                pos: front_pos,
-            });
+            return Some(Token::new(
+                TokenType::Num(s_num.parse::<usize>().unwrap()),
+                front_pos,
+            ));
+        }
+
+        let cur_pos = self.pos;
+
+        // 2 character operator
+        if self.s.len() >= 2 {
+            if let Some(token) = match &self.s[..2] {
+                "==" => Some(Token::new(TokenType::DoubleEq, cur_pos)),
+                "!=" => Some(Token::new(TokenType::ExclamEq, cur_pos)),
+                "<=" => Some(Token::new(TokenType::LAnglBrcktEq, cur_pos)),
+                ">=" => Some(Token::new(TokenType::RAnglBrcktEq, cur_pos)),
+                _ => None,
+            } {
+                self.s = &self.s[2..];
+                self.pos += 2;
+                return Some(token);
+            }
         }
 
         // 1 character operator
-        let (s_op, s_remains) = self.s.split_at(1);
-        self.s = s_remains;
+        let res = match &self.s[..1] {
+            "+" => Some(Token::new(TokenType::Plus, cur_pos)),
+            "-" => Some(Token::new(TokenType::Minus, cur_pos)),
+            "*" => Some(Token::new(TokenType::Asterisk, cur_pos)),
+            "/" => Some(Token::new(TokenType::Slash, cur_pos)),
+            "(" => Some(Token::new(TokenType::LBrckt, cur_pos)),
+            ")" => Some(Token::new(TokenType::RBrckt, cur_pos)),
+            "<" => Some(Token::new(TokenType::LAnglBrckt, cur_pos)),
+            ">" => Some(Token::new(TokenType::RAnglBrckt, cur_pos)),
+            _ => Some(Token::new(TokenType::Unknown, cur_pos)),
+        };
+        self.s = &self.s[1..];
         self.pos += 1;
-        match s_op {
-            "+" => Some(Token {
-                token_type: TokenType::Plus,
-                pos: self.pos - 1,
-            }),
-            "-" => Some(Token {
-                token_type: TokenType::Minus,
-                pos: self.pos - 1,
-            }),
-            "*" => Some(Token {
-                token_type: TokenType::Asterisk,
-                pos: self.pos - 1,
-            }),
-            "/" => Some(Token {
-                token_type: TokenType::Slash,
-                pos: self.pos - 1,
-            }),
-            "(" => Some(Token {
-                token_type: TokenType::LBracket,
-                pos: self.pos - 1,
-            }),
-            ")" => Some(Token {
-                token_type: TokenType::RBracket,
-                pos: self.pos - 1,
-            }),
-            _ => Some(Token {
-                token_type: TokenType::Unknown,
-                pos: self.pos - 1,
-            }),
-        }
+        return res;
     }
 }
 
@@ -123,50 +130,17 @@ fn tokenize_test() {
     let raw_code = String::from("1 *(4-31) /2 + 5");
     let res = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
     let expected = vec![
-        Token {
-            token_type: TokenType::Num(1),
-            pos: 0,
-        },
-        Token {
-            token_type: TokenType::Asterisk,
-            pos: 2,
-        },
-        Token {
-            token_type: TokenType::LBracket,
-            pos: 3,
-        },
-        Token {
-            token_type: TokenType::Num(4),
-            pos: 4,
-        },
-        Token {
-            token_type: TokenType::Minus,
-            pos: 5,
-        },
-        Token {
-            token_type: TokenType::Num(31),
-            pos: 6,
-        },
-        Token {
-            token_type: TokenType::RBracket,
-            pos: 8,
-        },
-        Token {
-            token_type: TokenType::Slash,
-            pos: 10,
-        },
-        Token {
-            token_type: TokenType::Num(2),
-            pos: 11,
-        },
-        Token {
-            token_type: TokenType::Plus,
-            pos: 13,
-        },
-        Token {
-            token_type: TokenType::Num(5),
-            pos: 15,
-        },
+        Token::new(TokenType::Num(1), 0),
+        Token::new(TokenType::Asterisk, 2),
+        Token::new(TokenType::LBrckt, 3),
+        Token::new(TokenType::Num(4), 4),
+        Token::new(TokenType::Minus, 5),
+        Token::new(TokenType::Num(31), 6),
+        Token::new(TokenType::RBrckt, 8),
+        Token::new(TokenType::Slash, 10),
+        Token::new(TokenType::Num(2), 11),
+        Token::new(TokenType::Plus, 13),
+        Token::new(TokenType::Num(5), 15),
     ];
     let matching = expected
         .iter()

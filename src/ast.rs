@@ -75,7 +75,7 @@ impl Expr {
             Ok(node)
         } else {
             match unused_tokens[0].token_type {
-                TokenType::RBracket => Err(ExprError::new(
+                TokenType::RBrckt => Err(ExprError::new(
                     "Corresponding ( is missing.",
                     unused_tokens[0].pos,
                 )),
@@ -169,13 +169,13 @@ impl Expr {
             .ok_or(ExprError::new("An expression is expected.", 0))?;
         match token.token_type {
             TokenType::Num(n) => Ok((Expr::ConstInt(ConstIntNode::new(n as i64)), &tokens[1..])),
-            TokenType::LBracket => {
+            TokenType::LBrckt => {
                 let (expr, unused_tokens) = Self::parse_as_expr(&tokens[1..])?;
                 let next_token = &unused_tokens
                     .get(0)
                     .ok_or(ExprError::new("Corresponding ) is missing.", token.pos))?;
                 match next_token.token_type {
-                    TokenType::RBracket => Ok((expr, &unused_tokens[1..])),
+                    TokenType::RBrckt => Ok((expr, &unused_tokens[1..])),
                     _ => Err(ExprError::new("Invalid operator.", next_token.pos)),
                 }
             }
@@ -203,7 +203,7 @@ fn ast_parse_ok_test3() {
     use crate::token::{Token, TokenIter};
     let raw_code = String::from("124- -42");
     let tokens = TokenIter::new(raw_code.as_str()).collect::<Vec<Token>>();
-    let _ = Expr::from(&tokens).err().unwrap();
+    let _ = Expr::from(&tokens).ok().unwrap();
 }
 #[test]
 fn ast_parse_err_test1() {
