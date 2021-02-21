@@ -79,13 +79,15 @@ impl BinaryOpNode {
 #[derive(Debug)]
 pub struct ExprError {
     pub message: &'static str,
-    pub pos: usize,
+    pub pos: (usize, usize),
 }
 impl ExprError {
-    pub fn new(message: &'static str, pos: usize) -> Self {
+    pub fn new(message: &'static str, pos: (usize, usize)) -> Self {
         ExprError { message, pos }
     }
 }
+
+type InternalExprError = Option<ExprError>;
 
 #[derive(Debug)]
 pub enum Expr {
@@ -94,18 +96,25 @@ pub enum Expr {
 }
 impl Expr {
     pub fn from(tokens: &[Token]) -> Result<Self, ExprError> {
-        let (node, unused_tokens) = Self::parse_as_eqnterm(tokens)?;
-        if unused_tokens.is_empty() {
-            Ok(node)
-        } else {
-            Err(ExprError::new(
-                match unused_tokens[0].token_type {
-                    TokenType::RBrckt => "Corresponding ( is missing.",
-                    TokenType::Unknown => "Unknown Operator.",
-                    _ => "Operator is missing.",
-                },
-                unused_tokens[0].pos,
-            ))
+        match Self::parse_as_eqnterm(tokens) {
+            Ok((node, unused_tokens)) => {
+                if unused_tokens.is_empty() {
+                    Ok(node)
+                } else {
+                    Err(ExprError::new(
+                        match unused_tokens[0].token_type {
+                            TokenType::RBrckt => "Corresponding ( is missing.",
+                            TokenType::Unknown => "Unknown Operator.",
+                            _ => "Operator is missing.",
+                        },
+                        unused_tokens[0].pos,
+                    ))
+                }
+            }
+            Err(e) => match e {
+                Some(e) => Err(e),
+                None => Err(ExprError::new("An expression is expected.", (0, 0))),
+            },
         }
     }
 
@@ -116,30 +125,43 @@ impl Expr {
         }
     }
 
-    fn parse_as_eqnterm(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+    fn parse_as_eqnterm(tokens: &[Token]) -> Result<(Self, &[Token]), InternalExprError> {
         let (mut node, mut unused_tokens) = Self::parse_as_relterm(tokens)?;
         loop {
-            if unused_tokens.len() == 0 {
+            if unused_tokens.len() == 0 || !unused_tokens[0].is_eqn_op() {
                 break;
             }
-            if let Some(op_type) = &unused_tokens[0].as_eqn_op() {
-                let (num_expr, tmp_unused_tokens) = Self::parse_as_relterm(&unused_tokens[1..])?;
-                node = Expr::BinaryOp(Box::new(BinaryOpNode::new(*op_type, node, num_expr)));
-                unused_tokens = tmp_unused_tokens;
-            } else {
-                break;
-            }
+            let (relterm_node, tmp_unused_tokens) = Self::parse_as_relterm(&unused_tokens[1..])
+                .map_err(|e| match e {
+                    Some(e) => Some(e),
+                    None => Some(ExprError::new(
+                        "An expression is expected.",
+                        (unused_tokens[0].pos.0, unused_tokens[0].pos.1 + 1),
+                    )),
+                })?;
+            node = Expr::BinaryOp(Box::new(match unused_tokens[0].token_type {
+                TokenType::DoubleEq => BinaryOpNode::new(BinaryOpType::Eql, node, relterm_node),
+                TokenType::ExclamEq | _ => BinaryOpNode::new(BinaryOpType::Neq, node, relterm_node),
+            }));
+            unused_tokens = tmp_unused_tokens;
         }
         Ok((node, unused_tokens))
     }
 
-    fn parse_as_relterm(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+    fn parse_as_relterm(tokens: &[Token]) -> Result<(Self, &[Token]), InternalExprError> {
         let (mut node, mut unused_tokens) = Self::parse_as_addterm(tokens)?;
         loop {
             if unused_tokens.len() == 0 || !unused_tokens[0].is_rel_op() {
                 break;
             }
-            let (add_term, tmp_unused_tokens) = Self::parse_as_addterm(&unused_tokens[1..])?;
+            let (add_term, tmp_unused_tokens) = Self::parse_as_addterm(&unused_tokens[1..])
+                .map_err(|e| match e {
+                    Some(e) => Some(e),
+                    None => Some(ExprError::new(
+                        "An expression is expected.",
+                        (unused_tokens[0].pos.0, unused_tokens[0].pos.1 + 1),
+                    )),
+                })?;
             node = Expr::BinaryOp(Box::new(match unused_tokens[0].token_type {
                 TokenType::LAnglBrckt => BinaryOpNode::new(BinaryOpType::Lt, node, add_term),
                 TokenType::RAnglBrckt => BinaryOpNode::new(BinaryOpType::Lt, add_term, node),
@@ -151,48 +173,65 @@ impl Expr {
         Ok((node, unused_tokens))
     }
 
-    fn parse_as_addterm(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+    fn parse_as_addterm(tokens: &[Token]) -> Result<(Self, &[Token]), InternalExprError> {
         let (mut node, mut unused_tokens) = Self::parse_as_multerm(tokens)?;
         loop {
-            if unused_tokens.len() == 0 {
+            if unused_tokens.len() == 0 || !unused_tokens[0].is_addsub_op() {
                 break;
             }
-            if let Some(op_type) = &unused_tokens[0].as_addsub_op() {
-                let (num_expr, tmp_unused_tokens) = Self::parse_as_multerm(&unused_tokens[1..])?;
-                node = Expr::BinaryOp(Box::new(BinaryOpNode::new(*op_type, node, num_expr)));
-                unused_tokens = tmp_unused_tokens;
-            } else {
-                break;
-            }
+            let (multerm_node, tmp_unused_tokens) = Self::parse_as_multerm(&unused_tokens[1..])
+                .map_err(|e| match e {
+                    Some(e) => Some(e),
+                    None => Some(ExprError::new(
+                        "An expression is expected.",
+                        (unused_tokens[0].pos.0, unused_tokens[0].pos.1 + 1),
+                    )),
+                })?;
+            node = Expr::BinaryOp(Box::new(match unused_tokens[0].token_type {
+                TokenType::Plus => BinaryOpNode::new(BinaryOpType::Add, node, multerm_node),
+                TokenType::Minus | _ => BinaryOpNode::new(BinaryOpType::Sub, node, multerm_node),
+            }));
+            unused_tokens = tmp_unused_tokens;
         }
         Ok((node, unused_tokens))
     }
 
-    fn parse_as_multerm(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
+    fn parse_as_multerm(tokens: &[Token]) -> Result<(Self, &[Token]), InternalExprError> {
         let (mut node, mut unused_tokens) = Self::parse_as_unary(tokens)?;
         loop {
-            if unused_tokens.len() == 0 {
+            if unused_tokens.len() == 0 || !unused_tokens[0].is_muldiv_op() {
                 break;
             }
-            if let Some(op_type) = &unused_tokens[0].as_muldiv_op() {
-                let (num_expr, tmp_unused_tokens) = Self::parse_as_unary(&unused_tokens[1..])?;
-                node = Expr::BinaryOp(Box::new(BinaryOpNode::new(*op_type, node, num_expr)));
-                unused_tokens = tmp_unused_tokens;
-            } else {
-                break;
-            }
+            let (unary_node, tmp_unused_tokens) = Self::parse_as_unary(&unused_tokens[1..])
+                .map_err(|e| match e {
+                    Some(e) => Some(e),
+                    None => Some(ExprError::new(
+                        "An expression is expected.",
+                        (unused_tokens[0].pos.0, unused_tokens[0].pos.1 + 1),
+                    )),
+                })?;
+            node = Expr::BinaryOp(Box::new(match unused_tokens[0].token_type {
+                TokenType::Asterisk => BinaryOpNode::new(BinaryOpType::Mul, node, unary_node),
+                TokenType::Slash | _ => BinaryOpNode::new(BinaryOpType::Div, node, unary_node),
+            }));
+            unused_tokens = tmp_unused_tokens;
         }
         Ok((node, unused_tokens))
     }
 
-    fn parse_as_unary(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
-        let token = &tokens
-            .get(0)
-            .ok_or(ExprError::new("An expression is expected.", 0))?;
+    fn parse_as_unary(tokens: &[Token]) -> Result<(Self, &[Token]), InternalExprError> {
+        let token = &tokens.get(0).ok_or(None)?;
         match token.token_type {
             TokenType::Plus => Self::parse_as_factor(&tokens[1..]),
             TokenType::Minus => {
-                let (expr, unused_tokens) = Self::parse_as_factor(&tokens[1..])?;
+                let (expr, unused_tokens) =
+                    Self::parse_as_factor(&tokens[1..]).map_err(|e| match e {
+                        Some(e) => Some(e),
+                        None => Some(ExprError::new(
+                            "An expression is expected.",
+                            (token.pos.0, token.pos.1 + 1),
+                        )),
+                    })?;
                 let expr = Expr::BinaryOp(Box::new(BinaryOpNode::new(
                     BinaryOpType::Sub,
                     Expr::ConstInt(ConstIntNode::new(0i64)),
@@ -204,10 +243,8 @@ impl Expr {
         }
     }
 
-    fn parse_as_factor(tokens: &[Token]) -> Result<(Self, &[Token]), ExprError> {
-        let token = &tokens
-            .get(0)
-            .ok_or(ExprError::new("An expression is expected.", 0))?;
+    fn parse_as_factor(tokens: &[Token]) -> Result<(Self, &[Token]), InternalExprError> {
+        let token = &tokens.get(0).ok_or(None)?;
         match token.token_type {
             TokenType::Num(n) => Ok((Expr::ConstInt(ConstIntNode::new(n as i64)), &tokens[1..])),
             TokenType::LBrckt => {
@@ -217,10 +254,10 @@ impl Expr {
                     .ok_or(ExprError::new("Corresponding ) is missing.", token.pos))?;
                 match next_token.token_type {
                     TokenType::RBrckt => Ok((expr, &unused_tokens[1..])),
-                    _ => Err(ExprError::new("Invalid operator.", next_token.pos)),
+                    _ => Err(Some(ExprError::new("Invalid operator.", next_token.pos))),
                 }
             }
-            _ => Err(ExprError::new("A number is expected.", token.pos)),
+            _ => Err(Some(ExprError::new("A number is expected.", token.pos))),
         }
     }
 }

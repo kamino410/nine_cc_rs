@@ -10,13 +10,14 @@ fn main() {
     }
 
     let arg = std::env::args().nth(1).unwrap();
+    let lines = arg.lines().collect::<Vec<&str>>();
     let tokens = TokenIter::new(arg.as_str()).collect::<Vec<Token>>();
 
     match Expr::from(&tokens) {
         Err(e) => {
             eprintln!("[Error]");
-            eprintln!("    {}", arg);
-            eprintln!("    {: <2$}^ {}", "", e.message, e.pos);
+            eprintln!("    {}", lines.get(e.pos.0).unwrap_or(&""));
+            eprintln!("    {: <2$}^ {}", "", e.message, e.pos.1);
         }
         Ok(expr) => {
             let mut assembly: Vec<String> = vec![];
